@@ -1,0 +1,17 @@
+{
+  "name": "@hexlet/code",
+  "version": "1.0.0",
+  "description": "Cli utility that downloads pages from the Internet, including all its files",
+  "bin": {
+    "page-loader": "bin/page-loader.js"
+  },
+  "type": "module",
+  "main": "./src/index.js",
+  "scripts": {
+    "lint": "npx eslint .",
+    "test": "npx jest",
+    "test-coverage": "npx jest --coverage"
+  },
+  "author": "Renat Shagaev",
+  "license": "ISC"
+}
