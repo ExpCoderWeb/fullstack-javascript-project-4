@@ -1,7 +1,7 @@
 {
   "name": "@hexlet/code",
   "version": "1.0.0",
-  "description": "Cli utility that downloads pages from the Internet, including all its files",
+  "description": "Cli utility that downloads pages from the Internet, including all their local resources",
   "bin": {
     "page-loader": "bin/page-loader.js"
   },
@@ -13,5 +13,22 @@
     "test-coverage": "npx jest --coverage"
   },
   "author": "Renat Shagaev",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.8.2",
+    "cheerio": "^1.0.0",
+    "commander": "^13.1.0"
+  },
+  "devDependencies": {
+    "@eslint/create-config": "^1.0.0",
+    "@eslint/eslintrc": "^3.3.0",
+    "@eslint/js": "^9.22.0",
+    "eslint": "^8.57.1",
+    "eslint-config-airbnb": "^19.0.4",
+    "eslint-plugin-import": "^2.31.0",
+    "globals": "^16.0.0",
+    "html-beautify": "^1.0.3",
+    "jest": "^29.7.0",
+    "nock": "^14.0.1"
+  }
 }
