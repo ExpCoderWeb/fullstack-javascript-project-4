@@ -3,12 +3,15 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import nock from 'nock';
+import debug from 'debug';
 import htmlBeautify from 'html-beautify';
 import * as cheerio from 'cheerio';
 import downloadPage from '../src/index.js';
 import { transformHostname, transformPathname, getTargetAttribute } from '../src/utils.js';
 
 nock.disableNetConnect();
+
+const log = debug('page-loader:nock');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -102,6 +105,7 @@ describe('downloadPage', () => {
     expectedImg = await fsp.readFile(getFixturePath('expectedImg.png'), 'utf-8');
     expectedLink = await fsp.readFile(getFixturePath('expectedLink.css'), 'utf-8');
     expectedScript = await fsp.readFile(getFixturePath('expectedScript.js'), 'utf-8');
+    log('Fixtures have been read');
   });
 
   beforeEach(async () => {
@@ -118,17 +122,18 @@ describe('downloadPage', () => {
     processInputUrl('img', imgLinkComponents, imgLocalLinks);
     processInputUrl('link', linkLinkComponents, linkLocalLinks);
     processInputUrl('script', scriptLinkComponents, scriptLocalLinks);
-
+    log('Local resources of input url have been processed');
     nockLocalResources(imgLinkComponents, expectedImg);
     nockLocalResources(linkLinkComponents, expectedLink);
     nockLocalResources(scriptLinkComponents, expectedScript);
-
+    log('Local resources have been nocked');
     nock(inputOrigin)
       .get(`${inputPathname}${inputSearch}`)
       .reply(200, initialContent);
 
     absoluteOutputDirPath = await fsp.mkdtemp(path.join(os.tmpdir(), 'page-loader-'));
     actualAbsoluteOutputFilepath = await downloadPage(inputUrl, absoluteOutputDirPath);
+    log('Page has been downloaded');
     absoluteOutputFilepath = path.join(absoluteOutputDirPath, expectedOutputPageName);
   });
 
