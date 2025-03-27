@@ -1,8 +1,14 @@
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import axios from 'axios';
+import axiosDebugLog from 'axios-debug-log';
+import debug from 'debug';
 import * as cheerio from 'cheerio';
 import { transformHostname, transformPathname, getTargetAttribute } from './utils.js';
+
+const log = debug('page-loader');
+
+axiosDebugLog(axios);
 
 const downloadPage = (url, outputPath = process.cwd()) => {
   const { hostname: inputUrlHostname, origin: inputUrlOrigin } = new URL(url);
@@ -45,20 +51,34 @@ const downloadPage = (url, outputPath = process.cwd()) => {
       }
     });
   };
-
+  log('Starting...');
+  log('Output directory is being created');
   return fsp.mkdir(absoluteOutputDirPath, { recursive: true })
-    .then(() => fsp.mkdir(outputResourcesDirPath))
-    .then(() => axios.get(url))
+    .then(() => {
+      log('Resources directory is being created');
+      return fsp.mkdir(outputResourcesDirPath);
+    })
+    .then(() => {
+      log(`GET ${url}`);
+      return axios.get(url);
+    })
     .then(({ data }) => {
+      log('Html has been received');
       const $ = cheerio.load(data);
       processResource($, 'img');
       processResource($, 'link');
       processResource($, 'script');
-
+      log('Resources have been processed and html has been changed');
       return $.html();
     })
-    .then((changedHtml) => fsp.writeFile(absoluteOutputFilepath, changedHtml))
-    .then(() => Promise.all(resourcePromises))
+    .then((changedHtml) => {
+      log('Html is being written');
+      return fsp.writeFile(absoluteOutputFilepath, changedHtml);
+    })
+    .then(() => {
+      log('Waiting for resources dowloading');
+      return Promise.all(resourcePromises);
+    })
     .then((resources) => {
       const resourcesAndFilepaths = [];
       let index = 0;
@@ -68,10 +88,17 @@ const downloadPage = (url, outputPath = process.cwd()) => {
         index += 1;
       });
 
+      log('fsp.writeFile resources performance');
       return resourcesAndFilepaths.map(([filepath, { data }]) => fsp.writeFile(filepath, data));
     })
-    .then((resourcePromisesToWrite) => Promise.all(resourcePromisesToWrite))
-    .then(() => absoluteOutputFilepath);
+    .then((resourcePromisesToWrite) => {
+      log('Waiting for resources writing');
+      return Promise.all(resourcePromisesToWrite);
+    })
+    .then(() => {
+      log('Success');
+      return absoluteOutputFilepath;
+    });
 };
 
 export default downloadPage;
