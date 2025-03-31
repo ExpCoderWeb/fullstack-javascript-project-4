@@ -3,6 +3,7 @@ import path from 'node:path';
 import axios from 'axios';
 import axiosDebugLog from 'axios-debug-log';
 import debug from 'debug';
+import Listr from 'listr';
 import * as cheerio from 'cheerio';
 import { transformHostname, transformPathname, getTargetAttribute } from './utils.js';
 
@@ -21,8 +22,8 @@ const downloadPage = (url, outputPath = process.cwd()) => {
   const absoluteOutputFilepath = path.join(absoluteOutputDirPath, outputPageName);
   const outputResourcesDirPath = path.join(absoluteOutputDirPath, outputResourcesDirName);
 
-  const resourcePromises = [];
-  const resourceFilepaths = [];
+  const localRscHrefsAndFilepaths = [];
+  const downloadedRscsAndFilepaths = [];
 
   const processResource = (cheerioMainFn, resource) => {
     const targetAttribute = getTargetAttribute(resource);
@@ -44,15 +45,16 @@ const downloadPage = (url, outputPath = process.cwd()) => {
         const resourceLocalLink = path.join(outputResourcesDirName, transformedRscLink);
         const absoluteOutputRscFilepath = path.join(outputResourcesDirPath, transformedRscLink);
 
-        resourcePromises.push(axios.get(rscHref, { responseType: 'arraybuffer' }));
-        resourceFilepaths.push(absoluteOutputRscFilepath);
+        localRscHrefsAndFilepaths.push([rscHref, absoluteOutputRscFilepath]);
 
         cheerioMainFn(element).attr(targetAttribute, resourceLocalLink);
       }
     });
   };
+
   log('Starting...');
   log('Output directory is being created');
+
   return fsp.mkdir(absoluteOutputDirPath, { recursive: true })
     .then(() => {
       log('Resources directory is being created');
@@ -77,19 +79,24 @@ const downloadPage = (url, outputPath = process.cwd()) => {
     })
     .then(() => {
       log('Waiting for resources dowloading');
-      return Promise.all(resourcePromises);
+      const tasks = localRscHrefsAndFilepaths.map(([rscHref, filepath]) => ({
+        title: rscHref,
+        task: () => axios.get(rscHref, { responseType: 'arraybuffer' })
+          .then(({ data }) => downloadedRscsAndFilepaths.push([filepath, data]))
+          .catch((error) => {
+            throw error;
+          }),
+      }));
+
+      const listrTasks = new Listr(tasks, { concurrent: true });
+      log(downloadedRscsAndFilepaths);
+
+      return listrTasks.run();
     })
-    .then((resources) => {
-      const resourcesAndFilepaths = [];
-      let index = 0;
-
-      resources.forEach((resource) => {
-        resourcesAndFilepaths.push([resourceFilepaths[index], resource]);
-        index += 1;
-      });
-
-      log('fsp.writeFile resources performance');
-      return resourcesAndFilepaths.map(([filepath, { data }]) => fsp.writeFile(filepath, data));
+    .catch((error) => console.error(error))
+    .then(() => {
+      log('fsp.writeFile resources mapping');
+      return downloadedRscsAndFilepaths.map(([filepath, rsc]) => fsp.writeFile(filepath, rsc));
     })
     .then((resourcePromisesToWrite) => {
       log('Waiting for resources writing');
@@ -102,3 +109,10 @@ const downloadPage = (url, outputPath = process.cwd()) => {
 };
 
 export default downloadPage;
+
+        // .then(() => {
+    //   resourcePromises.map((promise) => {
+    //     return promise.then((value) => ({ result: 'success', value}))
+    //       .catch((error) => ({ result: 'error', error }))
+    //   })
+    // })
