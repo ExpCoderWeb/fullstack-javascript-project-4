@@ -19,7 +19,8 @@
     "axios-debug-log": "^1.0.0",
     "cheerio": "^1.0.0",
     "commander": "^13.1.0",
-    "debug": "^4.4.0"
+    "debug": "^4.4.0",
+    "listr": "^0.14.3"
   },
   "devDependencies": {
     "@eslint/create-config": "^1.0.0",
