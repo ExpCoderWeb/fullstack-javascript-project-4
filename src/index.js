@@ -5,11 +5,15 @@ import axiosDebugLog from 'axios-debug-log';
 import debug from 'debug';
 import Listr from 'listr';
 import * as cheerio from 'cheerio';
-import { transformHostname, transformPathname, getTargetAttribute } from './utils.js';
-
-const log = debug('page-loader');
+import {
+  transformHostname,
+  transformPathname,
+  getTargetAttribute,
+  handleError,
+} from './utils.js';
 
 axiosDebugLog(axios);
+const log = debug('page-loader');
 
 const downloadPage = (url, outputPath = process.cwd()) => {
   const { hostname: inputUrlHostname, origin: inputUrlOrigin } = new URL(url);
@@ -43,17 +47,18 @@ const downloadPage = (url, outputPath = process.cwd()) => {
         const transformedRscLink = `${transformedRscHostname}${transformedRscPathname}`;
 
         const resourceLocalLink = path.join(outputResourcesDirName, transformedRscLink);
-        const absoluteOutputRscFilepath = path.join(outputResourcesDirPath, transformedRscLink);
-
-        localRscHrefsAndFilepaths.push([rscHref, absoluteOutputRscFilepath]);
-
         cheerioMainFn(element).attr(targetAttribute, resourceLocalLink);
+
+        const absoluteOutputRscFilepath = path.join(outputResourcesDirPath, transformedRscLink);
+        localRscHrefsAndFilepaths.push([rscHref, absoluteOutputRscFilepath]);
       }
     });
   };
 
+  const resourcesWritingErrors = [];
+
   log('Starting...');
-  log('Output directory is being created');
+  log('Output directory is being prepared');
 
   return fsp.mkdir(absoluteOutputDirPath, { recursive: true })
     .then(() => {
@@ -61,7 +66,7 @@ const downloadPage = (url, outputPath = process.cwd()) => {
       return fsp.mkdir(outputResourcesDirPath);
     })
     .then(() => {
-      log(`GET ${url}`);
+      log(`Requesting the target page: ${url}`);
       return axios.get(url);
     })
     .then(({ data }) => {
@@ -70,16 +75,26 @@ const downloadPage = (url, outputPath = process.cwd()) => {
       processResource($, 'img');
       processResource($, 'link');
       processResource($, 'script');
-      log('Resources have been processed and html has been changed');
+      log('Resources and html have been processed');
       return $.html();
     })
-    .then((changedHtml) => {
+    .then((processedHtml) => {
       log('Html is being written');
-      return fsp.writeFile(absoluteOutputFilepath, changedHtml);
+      return fsp.writeFile(absoluteOutputFilepath, processedHtml);
     })
     .then(() => {
       log('Waiting for resources dowloading');
-      const tasks = localRscHrefsAndFilepaths.map(([rscHref, filepath]) => ({
+
+      const uniqueHrefsAndFilepaths = localRscHrefsAndFilepaths.reduce((acc, item) => {
+        const [currentHref] = item;
+        if (!acc.some(([href]) => href === currentHref)) {
+          acc.push(item);
+        }
+
+        return acc;
+      }, []);
+
+      const tasks = uniqueHrefsAndFilepaths.map(([rscHref, filepath]) => ({
         title: rscHref,
         task: () => axios.get(rscHref, { responseType: 'arraybuffer' })
           .then(({ data }) => downloadedRscsAndFilepaths.push([filepath, data]))
@@ -88,20 +103,22 @@ const downloadPage = (url, outputPath = process.cwd()) => {
           }),
       }));
 
-      const listrTasks = new Listr(tasks, { concurrent: true });
-      log(downloadedRscsAndFilepaths);
+      const listrTasks = new Listr(tasks, { concurrent: true, exitOnError: false });
 
-      return listrTasks.run();
+      return listrTasks.run().catch(() => {});
     })
-    .catch((error) => console.error(error))
     .then(() => {
       log('fsp.writeFile resources mapping');
-      return downloadedRscsAndFilepaths.map(([filepath, rsc]) => fsp.writeFile(filepath, rsc));
+      return downloadedRscsAndFilepaths.map(([filepath, rsc]) => fsp.writeFile(filepath, rsc)
+        .catch((error) => resourcesWritingErrors.push(error)));
     })
     .then((resourcePromisesToWrite) => {
       log('Waiting for resources writing');
       return Promise.all(resourcePromisesToWrite);
     })
+    .then(() => resourcesWritingErrors.forEach((error) => {
+      handleError(error);
+    }))
     .then(() => {
       log('Success');
       return absoluteOutputFilepath;
@@ -109,10 +126,3 @@ const downloadPage = (url, outputPath = process.cwd()) => {
 };
 
 export default downloadPage;
-
-        // .then(() => {
-    //   resourcePromises.map((promise) => {
-    //     return promise.then((value) => ({ result: 'success', value}))
-    //       .catch((error) => ({ result: 'error', error }))
-    //   })
-    // })
