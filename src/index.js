@@ -15,16 +15,15 @@ import {
 axiosDebugLog(axios);
 const log = debug('page-loader');
 
-const downloadPage = (url, outputPath = process.cwd()) => {
+const downloadPage = (url, outputDirPath = process.cwd()) => {
   const { hostname: inputUrlHostname, origin: inputUrlOrigin } = new URL(url);
   const [, urlWithoutProtocol] = url.split('//');
 
   const outputPageName = `${transformHostname(urlWithoutProtocol)}.html`;
   const outputResourcesDirName = `${transformHostname(urlWithoutProtocol)}_files`;
 
-  const absoluteOutputDirPath = path.resolve(process.cwd(), outputPath);
-  const absoluteOutputFilepath = path.join(absoluteOutputDirPath, outputPageName);
-  const outputResourcesDirPath = path.join(absoluteOutputDirPath, outputResourcesDirName);
+  const absoluteOutputFilepath = path.join(outputDirPath, outputPageName);
+  const outputResourcesDirPath = path.join(outputDirPath, outputResourcesDirName);
 
   const localRscHrefsAndFilepaths = [];
   const downloadedRscsAndFilepaths = [];
@@ -58,11 +57,10 @@ const downloadPage = (url, outputPath = process.cwd()) => {
   const resourcesWritingErrors = [];
 
   log('Starting...');
-  log('Output directory is being prepared');
 
-  return fsp.mkdir(absoluteOutputDirPath, { recursive: true })
+  return fsp.access(outputDirPath)
     .then(() => {
-      log('Resources directory is being created');
+      log('Resources directory is being prepared');
       return fsp.mkdir(outputResourcesDirPath);
     })
     .then(() => {
