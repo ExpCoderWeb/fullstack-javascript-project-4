@@ -67,25 +67,37 @@ const nockLocalResources = (nockResourceLinkComponents, nockContent) => {
   });
 };
 
-describe('downloadPage', () => {
-  const inputUrl = 'https://ru.hexlet.io/courses/';
-  const {
-    origin: inputOrigin,
-    pathname: inputPathname,
-    search: inputSearch,
-  } = getUrlComponents(inputUrl);
-  const inputUrlUrlWithoutProtocol = getUrlWithoutProtocol(inputUrl);
+const inputUrl = 'https://ru.hexlet.io/courses/';
+const inputUrlUrlWithoutProtocol = getUrlWithoutProtocol(inputUrl);
+const expectedOutputPageName = getOutputPageName(inputUrlUrlWithoutProtocol);
+const expectedOutputResourcesDirName = getOutputResourcesDirName(inputUrlUrlWithoutProtocol);
+const {
+  origin: inputOrigin,
+  pathname: inputPathname,
+  search: inputSearch,
+} = getUrlComponents(inputUrl);
 
-  const expectedOutputPageName = getOutputPageName(inputUrlUrlWithoutProtocol);
-  const expectedOutputResourcesDirName = getOutputResourcesDirName(inputUrlUrlWithoutProtocol);
+let initialContent;
+let expectedHtml;
+let expectedImg;
+let expectedLink;
+let expectedScript;
 
-  let initialContent;
-  let expectedHtml;
-  let expectedImg;
-  let expectedLink;
-  let expectedScript;
+let absoluteOutputDirPath;
 
-  let absoluteOutputDirPath;
+beforeAll(async () => {
+  initialContent = await fsp.readFile(getFixturePath('initialHTML.txt'), 'utf-8');
+  expectedHtml = await fsp.readFile(getFixturePath('expectedHTML.txt'), 'utf-8');
+  expectedImg = await fsp.readFile(getFixturePath('expectedImg.png'), 'utf-8');
+  expectedLink = await fsp.readFile(getFixturePath('expectedLink.css'), 'utf-8');
+  expectedScript = await fsp.readFile(getFixturePath('expectedScript.js'), 'utf-8');
+});
+
+beforeEach(async () => {
+  absoluteOutputDirPath = await fsp.mkdtemp(path.join(os.tmpdir(), 'page-loader-'));
+});
+
+describe('downloadPage main flow', () => {
   let absoluteOutputFilepath;
   let actualAbsoluteOutputFilepath;
 
@@ -96,14 +108,6 @@ describe('downloadPage', () => {
   let imgLocalLinks;
   let linkLocalLinks;
   let scriptLocalLinks;
-
-  beforeAll(async () => {
-    initialContent = await fsp.readFile(getFixturePath('initialHTML.txt'), 'utf-8');
-    expectedHtml = await fsp.readFile(getFixturePath('expectedHTML.txt'), 'utf-8');
-    expectedImg = await fsp.readFile(getFixturePath('expectedImg.png'), 'utf-8');
-    expectedLink = await fsp.readFile(getFixturePath('expectedLink.css'), 'utf-8');
-    expectedScript = await fsp.readFile(getFixturePath('expectedScript.js'), 'utf-8');
-  });
 
   beforeEach(async () => {
     imgLinkComponents = [];
@@ -128,7 +132,6 @@ describe('downloadPage', () => {
       .get(`${inputPathname}${inputSearch}`)
       .reply(200, initialContent);
 
-    absoluteOutputDirPath = await fsp.mkdtemp(path.join(os.tmpdir(), 'page-loader-'));
     absoluteOutputFilepath = path.join(absoluteOutputDirPath, expectedOutputPageName);
     actualAbsoluteOutputFilepath = await downloadPage(inputUrl, absoluteOutputDirPath);
   });
@@ -163,7 +166,11 @@ describe('downloadPage', () => {
   });
 
   it('downloadPage with non-existent outputPath', async () => {
-    await expect(() => downloadPage(inputUrl, '/non/existant')).rejects.toThrow("EACCES: permission denied, mkdir '/non'");
+    await expect(() => downloadPage(inputUrl, '/non/existant')).rejects.toThrow("ENOENT: no such file or directory, access '/non/existant'");
+  });
+
+  it('downloadPage with no permission outputPath', async () => {
+    await expect(() => downloadPage(inputUrl, '/home')).rejects.toThrow(`EACCES: permission denied, mkdir '/home/${expectedOutputResourcesDirName}'`);
   });
 
   it('downloadPage with already existing outputPath', async () => {
