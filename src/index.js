@@ -7,119 +7,72 @@ import Listr from 'listr';
 import * as cheerio from 'cheerio';
 import {
   transformHostname,
-  transformPathname,
-  getTargetAttribute,
-  handleError,
+  extractLocalAssets,
+  getDownloadLinksAndFilepaths,
+  getTransformedLocalLinks,
+  replaceLocalLinks,
+  downloadAsset,
 } from './utils.js';
 
 axiosDebugLog(axios);
 const log = debug('page-loader');
 
-const downloadPage = (url, outputDirPath = process.cwd()) => {
-  const { hostname: inputUrlHostname, origin: inputUrlOrigin } = new URL(url);
-  const [, urlWithoutProtocol] = url.split('//');
+const assetAttributes = {
+  img: 'src',
+  script: 'src',
+  link: 'href',
+};
+
+const downloadPage = (inputUrl, outputDirPath = process.cwd()) => {
+  const [, urlWithoutProtocol] = inputUrl.split('//');
 
   const outputPageName = `${transformHostname(urlWithoutProtocol)}.html`;
-  const outputResourcesDirName = `${transformHostname(urlWithoutProtocol)}_files`;
+  const outputAssetsDirName = `${transformHostname(urlWithoutProtocol)}_files`;
 
-  const absoluteOutputFilepath = path.join(outputDirPath, outputPageName);
-  const outputResourcesDirPath = path.join(outputDirPath, outputResourcesDirName);
+  const absoluteOutputDirPath = path.resolve(process.cwd(), outputDirPath);
+  const absolutePagePath = path.join(absoluteOutputDirPath, outputPageName);
+  const absoluteAssetsDirPath = path.join(absoluteOutputDirPath, outputAssetsDirName);
 
-  const localRscHrefsAndFilepaths = [];
-  const downloadedRscsAndFilepaths = [];
-
-  const processResource = (cheerioMainFn, resource) => {
-    const targetAttribute = getTargetAttribute(resource);
-
-    cheerioMainFn(resource).each((_, element) => {
-      const resourceLink = cheerioMainFn(element).attr(targetAttribute);
-      const {
-        hostname: rscHostname,
-        pathname: rscPathname,
-        search: rscSearch,
-        href: rscHref,
-      } = new URL(resourceLink, inputUrlOrigin);
-
-      if (resourceLink && (url.includes(rscHostname) || resourceLink.includes(inputUrlHostname))) {
-        const transformedRscHostname = transformHostname(rscHostname);
-        const transformedRscPathname = transformPathname(`${rscPathname}${rscSearch}`);
-        const transformedRscLink = `${transformedRscHostname}${transformedRscPathname}`;
-
-        const resourceLocalLink = path.join(outputResourcesDirName, transformedRscLink);
-        cheerioMainFn(element).attr(targetAttribute, resourceLocalLink);
-
-        const absoluteOutputRscFilepath = path.join(outputResourcesDirPath, transformedRscLink);
-        localRscHrefsAndFilepaths.push([rscHref, absoluteOutputRscFilepath]);
-      }
-    });
-  };
-
-  const resourcesWritingErrors = [];
+  let downloadLinksAndFilepaths;
 
   log('Starting...');
 
-  return fsp.access(outputDirPath)
+  return fsp.access(absoluteOutputDirPath)
     .then(() => {
-      log('Resources directory is being prepared');
-      return fsp.mkdir(outputResourcesDirPath);
-    })
-    .then(() => {
-      log(`Requesting the target page: ${url}`);
-      return axios.get(url);
+      log(`Requesting the target page: ${inputUrl}`);
+      return axios.get(inputUrl);
     })
     .then(({ data }) => {
       log('Html has been received');
+
       const $ = cheerio.load(data);
-      processResource($, 'img');
-      processResource($, 'link');
-      processResource($, 'script');
-      log('Resources and html have been processed');
-      return $.html();
-    })
-    .then((processedHtml) => {
+      const localAssets = extractLocalAssets($, inputUrl, assetAttributes);
+      const transformedLocalLinks = getTransformedLocalLinks(inputUrl, localAssets, outputAssetsDirName);
+      downloadLinksAndFilepaths = getDownloadLinksAndFilepaths(inputUrl, localAssets, transformedLocalLinks, absoluteOutputDirPath);
+      replaceLocalLinks($, localAssets, transformedLocalLinks, assetAttributes);
+
+      log('Assets and html have been processed');
       log('Html is being written');
-      return fsp.writeFile(absoluteOutputFilepath, processedHtml);
+      return fsp.writeFile(absolutePagePath, $.html());
     })
     .then(() => {
-      log('Waiting for resources dowloading');
+      log('Assets directory is being prepared');
+      return fsp.mkdir(absoluteAssetsDirPath);
+    })
+    .then(() => {
+      log('Waiting for assets dowloading');
 
-      const uniqueHrefsAndFilepaths = localRscHrefsAndFilepaths.reduce((acc, item) => {
-        const [currentHref] = item;
-        if (!acc.some(([href]) => href === currentHref)) {
-          acc.push(item);
-        }
-
-        return acc;
-      }, []);
-
-      const tasks = uniqueHrefsAndFilepaths.map(([rscHref, filepath]) => ({
-        title: rscHref,
-        task: () => axios.get(rscHref, { responseType: 'arraybuffer' })
-          .then(({ data }) => downloadedRscsAndFilepaths.push([filepath, data]))
-          .catch((error) => {
-            throw error;
-          }),
+      const tasks = downloadLinksAndFilepaths.map(([url, filepath]) => ({
+        title: url,
+        task: () => downloadAsset(url, filepath),
       }));
-
       const listrTasks = new Listr(tasks, { concurrent: true, exitOnError: false });
 
       return listrTasks.run().catch(() => {});
     })
     .then(() => {
-      log('fsp.writeFile resources mapping');
-      return downloadedRscsAndFilepaths.map(([filepath, rsc]) => fsp.writeFile(filepath, rsc)
-        .catch((error) => resourcesWritingErrors.push(error)));
-    })
-    .then((resourcePromisesToWrite) => {
-      log('Waiting for resources writing');
-      return Promise.all(resourcePromisesToWrite);
-    })
-    .then(() => resourcesWritingErrors.forEach((error) => {
-      handleError(error);
-    }))
-    .then(() => {
       log('Success');
-      return absoluteOutputFilepath;
+      return absolutePagePath;
     });
 };
 
