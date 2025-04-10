@@ -1,5 +1,7 @@
 import path from 'node:path';
-import { AxiosError } from 'axios';
+import fsp from 'node:fs/promises';
+import axios, { AxiosError } from 'axios';
+import uniq from 'lodash/uniq.js';
 
 const transformHostname = (hostname) => {
   const normalizedHostname = hostname.at(-1) === '/' ? hostname.slice(0, -1) : hostname;
@@ -8,9 +10,9 @@ const transformHostname = (hostname) => {
 
 const transformPathname = (pathname) => {
   const normalizedPathname = pathname.at(-1) === '/' ? pathname.slice(0, -1) : pathname;
+  const firstReplacedPathname = normalizedPathname.replaceAll(/[^0-9a-zA-Z]/g, '-');
   const extension = path.extname(pathname).slice(1);
   const [normalizedExtension] = extension.match(/^[a-z]*/);
-  const firstReplacedPathname = normalizedPathname.replaceAll(/[^0-9a-zA-Z]/g, '-');
 
   const regularExpWordEnd = new RegExp(`-${normalizedExtension}$`);
   const secondReplacedPathname = firstReplacedPathname.replace(regularExpWordEnd, `.${normalizedExtension}`);
@@ -19,21 +21,11 @@ const transformPathname = (pathname) => {
     return secondReplacedPathname;
   }
 
-  const result = extension === '' ? `${secondReplacedPathname}.html` : `${secondReplacedPathname}.${normalizedExtension}`;
+  const result = extension === ''
+    ? `${secondReplacedPathname}.html`
+    : `${secondReplacedPathname}.${normalizedExtension}`;
 
   return result;
-};
-
-const getTargetAttribute = (resource) => {
-  switch (resource) {
-    case 'img':
-    case 'script':
-      return 'src';
-    case 'link':
-      return 'href';
-    default:
-      throw new Error(`Invalid resource - ${resource}`);
-  }
 };
 
 const handleError = (error) => {
@@ -52,9 +44,82 @@ const handleError = (error) => {
   }
 };
 
+const isSameDomain = (inputUrl, assetUrl) => {
+  const { hostname: inputUrlHostname, origin: inputUrlOrigin } = new URL(inputUrl);
+  const { hostname: assetUrlHostname } = new URL(assetUrl, inputUrlOrigin);
+
+  return inputUrl.includes(assetUrlHostname) || assetUrl.includes(inputUrlHostname);
+};
+
+const extractLocalAssets = (cheerioLoadedHtml, inputUrl, assetAttributes) => {
+  const localAssets = [];
+
+  Object.entries(assetAttributes)
+    .forEach(([tag, urlAttribute]) => {
+      cheerioLoadedHtml(tag).each((_, element) => {
+        const assetUrl = cheerioLoadedHtml(element).attr(urlAttribute);
+        localAssets.push({ element, tag, assetUrl });
+      });
+    });
+
+  return localAssets
+    .filter(({ assetUrl }) => assetUrl !== undefined && isSameDomain(inputUrl, assetUrl));
+};
+
+const getTransformedLocalLinks = (inputUrl, localAssets, outputAssetsDirName) => {
+  const result = [];
+  const { origin: inputUrlOrigin } = new URL(inputUrl);
+
+  localAssets.forEach(({ assetUrl }) => {
+    const {
+      hostname: assetHostname,
+      pathname: assetPathname,
+      search: assetSearch,
+    } = new URL(assetUrl, inputUrlOrigin);
+
+    const transformedAssetHostname = transformHostname(assetHostname);
+    const transformedAssetPathname = transformPathname(`${assetPathname}${assetSearch}`);
+    const transformedAssetLink = `${transformedAssetHostname}${transformedAssetPathname}`;
+
+    const newAssetLink = path.join(outputAssetsDirName, transformedAssetLink);
+    result.push(newAssetLink);
+  });
+
+  return result;
+};
+
+const getDownloadLinksAndFilepaths = (inputUrl, assets, transformedLinks, outputDirPath) => {
+  const result = [];
+  const { origin: inputUrlOrigin } = new URL(inputUrl);
+
+  assets.forEach(({ assetUrl }, index) => {
+    const absoluteAssetUrl = new URL(assetUrl, inputUrlOrigin).toString();
+    const filepath = path.join(outputDirPath, transformedLinks[index]);
+    result.push([absoluteAssetUrl, filepath]);
+  });
+
+  return uniq(result);
+};
+
+const replaceLocalLinks = (cheerioLoadedHtml, localAssets, localLinks, assetAttributes) => {
+  localAssets.forEach(({ element, tag }, index) => {
+    cheerioLoadedHtml(element).attr(assetAttributes[tag], localLinks[index]);
+  });
+};
+
+const downloadAsset = (url, filepath) => axios.get(url, { responseType: 'arraybuffer' })
+  .then(({ data }) => fsp.writeFile(filepath, data))
+  .catch((error) => {
+    throw error;
+  });
+
 export {
   transformHostname,
   transformPathname,
-  getTargetAttribute,
   handleError,
+  extractLocalAssets,
+  getTransformedLocalLinks,
+  replaceLocalLinks,
+  getDownloadLinksAndFilepaths,
+  downloadAsset,
 };
