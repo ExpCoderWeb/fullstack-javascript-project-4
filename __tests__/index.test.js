@@ -1,9 +1,9 @@
 import {
   describe,
-  it,
-  expect,
   beforeAll,
   beforeEach,
+  it,
+  expect,
 } from '@jest/globals';
 import { fileURLToPath } from 'node:url';
 import fsp from 'node:fs/promises';
@@ -12,9 +12,8 @@ import os from 'node:os';
 import nock from 'nock';
 import htmlBeautify from 'html-beautify';
 import { AxiosError } from 'axios';
-import * as cheerio from 'cheerio';
 import downloadPage from '../src/index.js';
-import { transformHostname, transformPathname, getTargetAttribute } from '../src/utils.js';
+import { transformPathname } from '../src/utils.js';
 
 nock.disableNetConnect();
 
@@ -23,82 +22,43 @@ const __dirname = path.dirname(__filename);
 
 const getFixturePath = (name) => path.join(__dirname, '..', '__fixtures__', name);
 
-const getUrlComponents = (url) => new URL(url);
-
-const getUrlWithoutProtocol = (url) => {
-  const [, urlWithoutProtocol] = url.split('//');
-  return urlWithoutProtocol;
-};
-
-const getOutputPageName = (urlWithoutProtocol) => `${transformHostname(urlWithoutProtocol)}.html`;
-const getOutputResourcesDirName = (urlWithoutProtocol) => `${transformHostname(urlWithoutProtocol)}_files`;
-
-const processRscLocalLinks = (cheerioFn, url, rscDirName) => (rsc, linkComponents, localLinks) => {
-  const { hostname: inputUrlHostname, origin: inputUrlOrigin } = new URL(url);
-  const targetAttribute = getTargetAttribute(rsc);
-
-  cheerioFn(rsc).each((_, element) => {
-    const resourceLink = cheerioFn(element).attr(targetAttribute);
-    const {
-      hostname: rscHostname,
-      pathname: rscPathname,
-      search: rscSearch,
-      href: rscHref,
-    } = new URL(resourceLink, inputUrlOrigin);
-
-    if (resourceLink && (url.includes(rscHostname) || resourceLink.includes(inputUrlHostname))) {
-      const {
-        origin: nockOrigin,
-        pathname: nockPathname,
-        search: nockSearch,
-      } = new URL(rscHref);
-
-      linkComponents.push([nockOrigin, nockPathname, nockSearch]);
-
-      const transformedRscHostname = transformHostname(rscHostname);
-      const transformedRscPathname = transformPathname(`${rscPathname}${rscSearch}`);
-      const transformedRscLink = `${transformedRscHostname}${transformedRscPathname}`;
-
-      const resourceLocalLink = path.join(rscDirName, transformedRscLink);
-
-      localLinks.push(resourceLocalLink);
-    }
-  });
-};
-
-const nockLocalResources = (nockResourceLinkComponents, nockContent) => {
-  nockResourceLinkComponents.forEach(([nockOrigin, nockPathname, nockSearch]) => {
-    nock(nockOrigin)
-      .get(`${nockPathname}${nockSearch}`)
-      .reply(200, nockContent);
-  });
-};
-
 const inputUrl = 'https://ru.hexlet.io/courses/';
-const inputUrlUrlWithoutProtocol = getUrlWithoutProtocol(inputUrl);
-const expectedOutputPageName = getOutputPageName(inputUrlUrlWithoutProtocol);
-const expectedOutputResourcesDirName = getOutputResourcesDirName(inputUrlUrlWithoutProtocol);
+const expectedOutputPageName = 'ru-hexlet-io-courses.html';
+const expectedOutputAssetsDirName = 'ru-hexlet-io-courses_files';
 const {
   origin: inputOrigin,
   pathname: inputPathname,
   search: inputSearch,
-} = getUrlComponents(inputUrl);
+} = new URL(inputUrl);
 
-let initialContent;
+let initialHtml;
 let expectedHtml;
 let expectedImg;
 let expectedLink;
 let expectedScript;
 
-let absoluteOutputDirPath;
-
 beforeAll(async () => {
-  initialContent = await fsp.readFile(getFixturePath('initialHTML.txt'), 'utf-8');
+  initialHtml = await fsp.readFile(getFixturePath('initialHTML.txt'), 'utf-8');
   expectedHtml = await fsp.readFile(getFixturePath('expectedHTML.txt'), 'utf-8');
   expectedImg = await fsp.readFile(getFixturePath('expectedImg.png'), 'utf-8');
   expectedLink = await fsp.readFile(getFixturePath('expectedLink.css'), 'utf-8');
   expectedScript = await fsp.readFile(getFixturePath('expectedScript.js'), 'utf-8');
+
+  nock(inputOrigin)
+    .persist()
+    .get(`${inputPathname}${inputSearch}`)
+    .reply(200, initialHtml)
+    .get('/assets/application.css')
+    .reply(200, expectedLink)
+    .get('/courses')
+    .reply(200, initialHtml)
+    .get('/assets/professions/nodejs.png')
+    .reply(200, expectedImg)
+    .get('/packs/js/runtime.js')
+    .reply(200, expectedScript);
 });
+
+let absoluteOutputDirPath;
 
 beforeEach(async () => {
   absoluteOutputDirPath = await fsp.mkdtemp(path.join(os.tmpdir(), 'page-loader-'));
@@ -108,37 +68,7 @@ describe('downloadPage main flow', () => {
   let absoluteOutputFilepath;
   let actualAbsoluteOutputFilepath;
 
-  let imgLinkComponents;
-  let linkLinkComponents;
-  let scriptLinkComponents;
-
-  let imgLocalLinks;
-  let linkLocalLinks;
-  let scriptLocalLinks;
-
   beforeEach(async () => {
-    imgLinkComponents = [];
-    linkLinkComponents = [];
-    scriptLinkComponents = [];
-
-    imgLocalLinks = [];
-    linkLocalLinks = [];
-    scriptLocalLinks = [];
-
-    const $ = cheerio.load(initialContent);
-    const processInputUrl = processRscLocalLinks($, inputUrl, expectedOutputResourcesDirName);
-    processInputUrl('img', imgLinkComponents, imgLocalLinks);
-    processInputUrl('link', linkLinkComponents, linkLocalLinks);
-    processInputUrl('script', scriptLinkComponents, scriptLocalLinks);
-
-    nockLocalResources(imgLinkComponents, expectedImg);
-    nockLocalResources(linkLinkComponents, expectedLink);
-    nockLocalResources(scriptLinkComponents, expectedScript);
-
-    nock(inputOrigin)
-      .get(`${inputPathname}${inputSearch}`)
-      .reply(200, initialContent);
-
     absoluteOutputFilepath = path.join(absoluteOutputDirPath, expectedOutputPageName);
     actualAbsoluteOutputFilepath = await downloadPage(inputUrl, absoluteOutputDirPath);
   });
@@ -148,8 +78,8 @@ describe('downloadPage main flow', () => {
   });
 
   it('should contain the expected output resources directory', async () => {
-    const absoluteTestDirPathContent = await fsp.readdir(absoluteOutputDirPath);
-    expect(absoluteTestDirPathContent).toContain(expectedOutputResourcesDirName);
+    const outputDirContent = await fsp.readdir(absoluteOutputDirPath);
+    expect(outputDirContent).toContain(expectedOutputAssetsDirName);
   });
 
   it('should match the expected HTML', async () => {
@@ -160,11 +90,11 @@ describe('downloadPage main flow', () => {
   });
 
   it('should be the expected resources', async () => {
-    const actualImg = await fsp.readFile(path.join(absoluteOutputDirPath, imgLocalLinks[0]), 'utf-8');
+    const actualImg = await fsp.readFile(path.join(absoluteOutputDirPath, expectedOutputAssetsDirName, 'ru-hexlet-io-assets-professions-nodejs.png'), 'utf-8');
     expect(actualImg).toBe(expectedImg);
-    const actualLink = await fsp.readFile(path.join(absoluteOutputDirPath, linkLocalLinks[0]), 'utf-8');
+    const actualLink = await fsp.readFile(path.join(absoluteOutputDirPath, expectedOutputAssetsDirName, 'ru-hexlet-io-assets-application.css'), 'utf-8');
     expect(actualLink).toBe(expectedLink);
-    const actualScript = await fsp.readFile(path.join(absoluteOutputDirPath, scriptLocalLinks[0]), 'utf-8');
+    const actualScript = await fsp.readFile(path.join(absoluteOutputDirPath, expectedOutputAssetsDirName, 'ru-hexlet-io-packs-js-runtime.js'), 'utf-8');
     expect(actualScript).toBe(expectedScript);
   });
 
@@ -177,17 +107,11 @@ describe('downloadPage main flow', () => {
   });
 
   it('downloadPage with no permission outputPath', async () => {
-    await expect(() => downloadPage(inputUrl, '/home')).rejects.toThrow(`EACCES: permission denied, mkdir '/home/${expectedOutputResourcesDirName}'`);
+    await expect(() => downloadPage(inputUrl, '/home')).rejects.toThrow("EACCES: permission denied, open '/home/ru-hexlet-io-courses.html'");
   });
 
   it('downloadPage with already existing outputPath', async () => {
-    await expect(() => downloadPage(inputUrl, absoluteOutputDirPath)).rejects.toThrow(`EEXIST: file already exists, mkdir '${path.join(absoluteOutputDirPath, expectedOutputResourcesDirName)}'`);
-  });
-});
-
-describe('getTargetAttribute', () => {
-  it('should throw the expected error', () => {
-    expect(() => getTargetAttribute('div')).toThrow('Invalid resource - div');
+    await expect(() => downloadPage(inputUrl, absoluteOutputDirPath)).rejects.toThrow(`EEXIST: file already exists, mkdir '${path.join(absoluteOutputDirPath, expectedOutputAssetsDirName)}'`);
   });
 });
 
