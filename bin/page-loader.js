@@ -14,8 +14,8 @@ program
   .action((url) => {
     const outputPath = program.opts().output;
     downloadPage(url, outputPath)
-      .then((absoluteOutputFilepath) => {
-        console.log(`Page was successfully downloaded into '${absoluteOutputFilepath}'`);
+      .then((absolutePagePath) => {
+        console.log(`Page was successfully downloaded into '${absolutePagePath}'`);
         process.exit(0);
       })
       .catch((error) => {
