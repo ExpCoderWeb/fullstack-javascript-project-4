@@ -8,7 +8,7 @@ import * as cheerio from 'cheerio';
 import {
   transformHostname,
   extractLocalAssets,
-  getDownloadLinksAndFilepaths,
+  getLinksAndFilepaths,
   getTransformedLocalLinks,
   replaceLocalLinks,
   downloadAsset,
@@ -25,19 +25,18 @@ const assetAttributes = {
 
 const downloadPage = (inputUrl, outputDirPath = process.cwd()) => {
   const [, urlWithoutProtocol] = inputUrl.split('//');
-
   const outputPageName = `${transformHostname(urlWithoutProtocol)}.html`;
-  const outputAssetsDirName = `${transformHostname(urlWithoutProtocol)}_files`;
+  const assetsDirName = `${transformHostname(urlWithoutProtocol)}_files`;
 
-  const absoluteOutputDirPath = path.resolve(process.cwd(), outputDirPath);
-  const absolutePagePath = path.join(absoluteOutputDirPath, outputPageName);
-  const absoluteAssetsDirPath = path.join(absoluteOutputDirPath, outputAssetsDirName);
+  const absoluteDirPath = path.resolve(process.cwd(), outputDirPath);
+  const absolutePagePath = path.join(absoluteDirPath, outputPageName);
+  const absoluteAssetsDirPath = path.join(absoluteDirPath, assetsDirName);
 
   let downloadLinksAndFilepaths;
 
   log('Starting...');
 
-  return fsp.access(absoluteOutputDirPath)
+  return fsp.access(absoluteDirPath)
     .then(() => {
       log(`Requesting the target page: ${inputUrl}`);
       return axios.get(inputUrl);
@@ -46,10 +45,10 @@ const downloadPage = (inputUrl, outputDirPath = process.cwd()) => {
       log('Html has been received');
 
       const $ = cheerio.load(data);
-      const localAssets = extractLocalAssets($, inputUrl, assetAttributes);
-      const transformedLocalLinks = getTransformedLocalLinks(inputUrl, localAssets, outputAssetsDirName);
-      downloadLinksAndFilepaths = getDownloadLinksAndFilepaths(inputUrl, localAssets, transformedLocalLinks, absoluteOutputDirPath);
-      replaceLocalLinks($, localAssets, transformedLocalLinks, assetAttributes);
+      const assets = extractLocalAssets($, inputUrl, assetAttributes);
+      const links = getTransformedLocalLinks(inputUrl, assets, assetsDirName);
+      downloadLinksAndFilepaths = getLinksAndFilepaths(inputUrl, assets, links, absoluteDirPath);
+      replaceLocalLinks($, assets, links, assetAttributes);
 
       log('Assets and html have been processed');
       log('Html is being written');
