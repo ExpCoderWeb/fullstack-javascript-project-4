@@ -24,7 +24,7 @@ const getFixturePath = (name) => path.join(__dirname, '..', '__fixtures__', name
 
 const inputUrl = 'https://ru.hexlet.io/courses/';
 const expectedOutputPageName = 'ru-hexlet-io-courses.html';
-const expectedOutputAssetsDirName = 'ru-hexlet-io-courses_files';
+const expectedAssetsDirName = 'ru-hexlet-io-courses_files';
 const {
   origin: inputOrigin,
   pathname: inputPathname,
@@ -58,48 +58,50 @@ beforeAll(async () => {
     .reply(200, expectedScript);
 });
 
-let absoluteOutputDirPath;
+let absoluteDirPath;
 
 beforeEach(async () => {
-  absoluteOutputDirPath = await fsp.mkdtemp(path.join(os.tmpdir(), 'page-loader-'));
+  absoluteDirPath = await fsp.mkdtemp(path.join(os.tmpdir(), 'page-loader-'));
 });
 
 describe('downloadPage main flow', () => {
-  let absoluteOutputFilepath;
-  let actualAbsoluteOutputFilepath;
+  let absolutePagePath;
+  let actualAbsolutePagePath;
 
   beforeEach(async () => {
-    absoluteOutputFilepath = path.join(absoluteOutputDirPath, expectedOutputPageName);
-    actualAbsoluteOutputFilepath = await downloadPage(inputUrl, absoluteOutputDirPath);
+    absolutePagePath = path.join(absoluteDirPath, expectedOutputPageName);
+    actualAbsolutePagePath = await downloadPage(inputUrl, absoluteDirPath);
   });
 
   it('should match the expected absolute filepath', async () => {
-    expect(actualAbsoluteOutputFilepath).toBe(absoluteOutputFilepath);
+    expect(actualAbsolutePagePath).toBe(absolutePagePath);
   });
 
   it('should contain the expected output resources directory', async () => {
-    const outputDirContent = await fsp.readdir(absoluteOutputDirPath);
-    expect(outputDirContent).toContain(expectedOutputAssetsDirName);
+    const outputDirContent = await fsp.readdir(absoluteDirPath);
+    expect(outputDirContent).toContain(expectedAssetsDirName);
   });
 
   it('should match the expected HTML', async () => {
-    const actualHtml = await fsp.readFile(absoluteOutputFilepath, 'utf-8');
+    const actualHtml = await fsp.readFile(absolutePagePath, 'utf-8');
     const formattedExpectedHTML = htmlBeautify(expectedHtml);
     const formattedActualHTML = htmlBeautify(actualHtml);
     expect(formattedActualHTML).toBe(formattedExpectedHTML);
   });
 
   it('should be the expected resources', async () => {
-    const actualImg = await fsp.readFile(path.join(absoluteOutputDirPath, expectedOutputAssetsDirName, 'ru-hexlet-io-assets-professions-nodejs.png'), 'utf-8');
+    const actualImg = await fsp.readFile(path.join(absoluteDirPath, expectedAssetsDirName, 'ru-hexlet-io-assets-professions-nodejs.png'), 'utf-8');
     expect(actualImg).toBe(expectedImg);
-    const actualLink = await fsp.readFile(path.join(absoluteOutputDirPath, expectedOutputAssetsDirName, 'ru-hexlet-io-assets-application.css'), 'utf-8');
+    const actualLink = await fsp.readFile(path.join(absoluteDirPath, expectedAssetsDirName, 'ru-hexlet-io-assets-application.css'), 'utf-8');
     expect(actualLink).toBe(expectedLink);
-    const actualScript = await fsp.readFile(path.join(absoluteOutputDirPath, expectedOutputAssetsDirName, 'ru-hexlet-io-packs-js-runtime.js'), 'utf-8');
+    const actualScript = await fsp.readFile(path.join(absoluteDirPath, expectedAssetsDirName, 'ru-hexlet-io-packs-js-runtime.js'), 'utf-8');
     expect(actualScript).toBe(expectedScript);
   });
+});
 
+describe('downloadPage with errors', () => {
   it('downloadPage with non-existent link', async () => {
-    await expect(() => downloadPage('https://non-existent.com/', absoluteOutputDirPath)).rejects.toBeInstanceOf(AxiosError);
+    await expect(() => downloadPage('https://non-existent.com/', absoluteDirPath)).rejects.toBeInstanceOf(AxiosError);
   });
 
   it('downloadPage with non-existent outputPath', async () => {
@@ -111,7 +113,8 @@ describe('downloadPage main flow', () => {
   });
 
   it('downloadPage with already existing outputPath', async () => {
-    await expect(() => downloadPage(inputUrl, absoluteOutputDirPath)).rejects.toThrow(`EEXIST: file already exists, mkdir '${path.join(absoluteOutputDirPath, expectedOutputAssetsDirName)}'`);
+    await downloadPage(inputUrl, absoluteDirPath);
+    await expect(() => downloadPage(inputUrl, absoluteDirPath)).rejects.toThrow(`EEXIST: file already exists, mkdir '${path.join(absoluteDirPath, expectedAssetsDirName)}'`);
   });
 });
 
