@@ -88,7 +88,7 @@ const getTransformedLocalLinks = (inputUrl, localAssets, outputAssetsDirName) =>
   return result;
 };
 
-const getDownloadLinksAndFilepaths = (inputUrl, assets, transformedLinks, outputDirPath) => {
+const getLinksAndFilepaths = (inputUrl, assets, transformedLinks, outputDirPath) => {
   const result = [];
   const { origin: inputUrlOrigin } = new URL(inputUrl);
 
@@ -120,6 +120,6 @@ export {
   extractLocalAssets,
   getTransformedLocalLinks,
   replaceLocalLinks,
-  getDownloadLinksAndFilepaths,
+  getLinksAndFilepaths,
   downloadAsset,
 };
