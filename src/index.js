@@ -17,12 +17,6 @@ import {
 axiosDebugLog(axios);
 const log = debug('page-loader');
 
-const assetAttributes = {
-  img: 'src',
-  script: 'src',
-  link: 'href',
-};
-
 const downloadPage = (inputUrl, outputDirPath = process.cwd()) => {
   const [, urlWithoutProtocol] = inputUrl.split('//');
   const outputPageName = `${transformHostname(urlWithoutProtocol)}.html`;
@@ -45,10 +39,10 @@ const downloadPage = (inputUrl, outputDirPath = process.cwd()) => {
       log('Html has been received');
 
       const $ = cheerio.load(data);
-      const assets = extractLocalAssets($, inputUrl, assetAttributes);
+      const assets = extractLocalAssets($, inputUrl);
       const links = getTransformedLocalLinks(inputUrl, assets, assetsDirName);
       downloadLinksAndFilepaths = getLinksAndFilepaths(inputUrl, assets, links, absoluteDirPath);
-      replaceLocalLinks($, assets, links, assetAttributes);
+      replaceLocalLinks($, assets, links);
 
       log('Assets and html have been processed');
       log('Html is being written');
