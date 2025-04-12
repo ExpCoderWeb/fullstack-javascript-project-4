@@ -3,6 +3,12 @@ import fsp from 'node:fs/promises';
 import axios, { AxiosError } from 'axios';
 import uniq from 'lodash/uniq.js';
 
+const ASSET_ATTRIBUTES = {
+  img: 'src',
+  script: 'src',
+  link: 'href',
+};
+
 const transformHostname = (hostname) => {
   const normalizedHostname = hostname.at(-1) === '/' ? hostname.slice(0, -1) : hostname;
   return normalizedHostname.replaceAll(/[^0-9a-zA-Z]/g, '-');
@@ -51,10 +57,10 @@ const isSameDomain = (inputUrl, assetUrl) => {
   return inputUrl.includes(assetUrlHostname) || assetUrl.includes(inputUrlHostname);
 };
 
-const extractLocalAssets = (cheerioLoadedHtml, inputUrl, assetAttributes) => {
+const extractLocalAssets = (cheerioLoadedHtml, inputUrl) => {
   const localAssets = [];
 
-  Object.entries(assetAttributes)
+  Object.entries(ASSET_ATTRIBUTES)
     .forEach(([tag, urlAttribute]) => {
       cheerioLoadedHtml(tag).each((_, element) => {
         const assetUrl = cheerioLoadedHtml(element).attr(urlAttribute);
@@ -89,21 +95,20 @@ const getTransformedLocalLinks = (inputUrl, localAssets, outputAssetsDirName) =>
 };
 
 const getLinksAndFilepaths = (inputUrl, assets, transformedLinks, outputDirPath) => {
-  const result = [];
   const { origin: inputUrlOrigin } = new URL(inputUrl);
 
-  assets.forEach(({ assetUrl }, index) => {
+  const linksAndFilepaths = assets.map(({ assetUrl }, index) => {
     const absoluteAssetUrl = new URL(assetUrl, inputUrlOrigin).toString();
     const filepath = path.join(outputDirPath, transformedLinks[index]);
-    result.push([absoluteAssetUrl, filepath]);
+    return [absoluteAssetUrl, filepath];
   });
 
-  return uniq(result);
+  return uniq(linksAndFilepaths);
 };
 
-const replaceLocalLinks = (cheerioLoadedHtml, localAssets, localLinks, assetAttributes) => {
+const replaceLocalLinks = (cheerioLoadedHtml, localAssets, localLinks) => {
   localAssets.forEach(({ element, tag }, index) => {
-    cheerioLoadedHtml(element).attr(assetAttributes[tag], localLinks[index]);
+    cheerioLoadedHtml(element).attr(ASSET_ATTRIBUTES[tag], localLinks[index]);
   });
 };
 
